@@ -97,12 +97,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "System Architecture.md",
+                "file": "Software Development.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "System Architecture"
+              "title": "Software Development"
             }
           },
           {
@@ -111,16 +111,16 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Networking.md",
+                "file": "Software Development.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Networking"
+              "title": "Software Development"
             }
           }
         ],
-        "currentTab": 6
+        "currentTab": 7
       }
     ],
     "direction": "vertical"
@@ -287,21 +287,21 @@
       "bases:Create new base": false
     }
   },
-  "active": "f4a18b3abb2ac7ec",
+  "active": "588646b402de397e",
   "lastOpenFiles": [
+    "project defination/Architecture Decision Records (ADRs).md",
+    "Software Development.md",
+    "Campus Edge Platform Decisions.md",
+    "System Architecture.md",
+    "Networking.md",
+    "System.md",
     "README.md",
     "knowledge pool.md",
-    "System Architecture.md",
-    "System.md",
     "labs/networking/NetLab1).md",
-    "Networking.md",
     "project defination",
     "labs/networking",
     "labs",
-    "Campus Edge Platform Decisions.md",
-    "project defination/Architecture Decision Records (ADRs).md",
     "keep track of date subject and time.md",
-    "Software Development.md",
     "Untitled.canvas"
   ]
 }
