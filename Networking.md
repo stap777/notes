@@ -1152,3 +1152,592 @@ We'll ask each interface:
     
 
 Then we'll design the MVP interface-selection algorithm that a real Campus Edge node will use before opening its first network socket.
+
+
+# 24/09/26 03:15 - 04:40 (85) 
+Session: 3
+
+Roadmap Position: Phase 1 → Month 1 (TCP/IP, Sockets, HTTP/DNS Basics)
+
+Duration: 60 Minutes
+
+Build Artifact: `network-inspector` v0.3
+
+Git Commit
+
+```
+feat(network): inspect interface state and format MAC addresses
+```
+
+# Session Objective
+
+Transform `network-inspector` from a simple interface listing tool into a diagnostic utility that can interrogate the operating system and determine which interfaces are actually usable.
+
+Instead of trusting interface names like `wlan0` or `eth0`, we learned to ask the operating system for interface properties.
+
+This is an important architectural shift.
+
+Previous session:
+
+```
+OS → Interface Names
+```
+
+Today's session:
+
+```
+OS → Interface Objects → Properties → Engineering Decisions
+```
+
+# Build Progress
+
+Before Session 3
+
+```
+✓ Collect interfaces
+✓ Store in List
+✓ Print names
+```
+
+After Session 3
+
+```
+✓ Collect interfaces
+✓ Filter operational interfaces
+✓ Read raw MAC bytes
+✓ Handle missing hardware addresses
+✓ Convert binary bytes into hexadecimal MAC addresses
+✓ Prepare to inspect IP addresses
+```
+
+Our tool is beginning to resemble the startup diagnostics of a real distributed node.
+
+# Part 1: Understanding Interface State (`isUp()`)
+
+The first new property we investigated was
+
+```
+ni.isUp()
+```
+
+At first glance, this looks like
+
+> "Is the internet working?"
+
+That interpretation is incorrect.
+
+## What `isUp()` Actually Means
+
+The operating system considers an interface UP when the interface itself is operational.
+
+Think of the kernel maintaining something like this internally.
+
+|Property|Wi-Fi|
+|---|---|
+|Driver loaded|Yes|
+|Hardware detected|Yes|
+|Interface enabled|Yes|
+|Ready to transmit|Yes|
+
+If these conditions are satisfied,
+
+the interface is considered UP.
+
+Notice what is missing.
+
+- Internet connectivity
+    
+- Router availability
+    
+- Successful DNS resolution
+    
+
+Those are separate questions.
+
+## Mental Model
+
+Imagine a walkie-talkie.
+
+![Walkie talkie Flat icon vector vector illustration.](https://images.openai.com/static-rsc-4/mnHFMuQlOepjP9K7eRswTl1BwcQdVjikcA-6qNQWxP_XUoqAFcGrGqlcFwBMSBgCSd0aCHewZsdIwugUUDpgwbzCO7HaKyklwQ32oTmNOurfFl2Uk49eZ49BTd-nL7iZ4uT15m4kJ3sbX40UXWGvy909LYf4KBBaUesw2cQU5nHJhp9_MQgq12up7B8GyxKa?purpose=inline)
+
+If:
+
+- battery exists,
+    
+- antenna works,
+    
+- power is on,
+    
+
+the radio is operational.
+
+Even if nobody answers.
+
+Networking works similarly.
+
+## Cases We Analyzed
+
+|Situation|Expected Result|Why|
+|---|---|---|
+|Wi-Fi enabled, no router|UP|Hardware still operates|
+|Ethernet unplugged|Usually DOWN|Link missing|
+|Loopback|UP|Internal software interface|
+|VPN disconnected|Usually DOWN|Tunnel inactive|
+
+Important lesson:
+
+Never confuse
+
+> operational
+
+with
+
+> reachable.
+
+## Campus Edge Design Decision
+
+Instead of writing
+
+```
+Use Wi-Fi.
+```
+
+our future startup algorithm becomes
+
+```
+Collect Interfaces
+        ↓
+Keep only interfaces where isUp() == true
+```
+
+This is hardware-independent.
+
+# Part 2: Real Evidence
+
+Your machine reported:
+
+```
+lo
+wlan1
+eth21
+```
+
+as operational.
+
+This became an important engineering lesson.
+
+Notice:
+
+We did not assume
+
+- `wlan0`
+    
+- `eth0`
+    
+
+would be active.
+
+Instead we trusted
+
+observable system state.
+
+Engineering principle:
+
+> Evidence beats assumptions.
+
+# Part 3: Retrieving the Hardware Address
+
+We introduced
+
+```
+byte[] mac = ni.getHardwareAddress();
+```
+
+This opened an important low-level discussion.
+
+## Why `byte[]`?
+
+The operating system does not store MAC addresses as text.
+
+It stores them as
+
+48 bits
+
+which equals
+
+6 bytes6\text{ bytes}6 bytes
+
+Inside the NIC:
+
+![](data:image/svg+xml;charset=utf-8,%3Csvg%20font-family%3D%22-apple-system-body%2C%20ui-sans-serif%2C%20-apple-system%2C%20system-ui%2C%20%26quot%3BSegoe%20UI%26quot%3B%2C%20Helvetica%2C%20%26quot%3BApple%20Color%20Emoji%26quot%3B%2C%20Arial%2C%20sans-serif%2C%20%26quot%3BSegoe%20UI%20Emoji%26quot%3B%2C%20%26quot%3BSegoe%20UI%20Symbol%26quot%3B%22%20font-weight%3D%22400%22%20data-d-component%3D%22svg%22%20fill%3D%22currentColor%22%20style%3D%22color%3Argb\(255%2C%20255%2C%20255\)%22%20viewBox%3D%220%200%20720%20140%22%20width%3D%22100%25%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Crect%20x%3D%2220%22%20y%3D%2240%22%20width%3D%22680%22%20height%3D%2260%22%20rx%3D%2210%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%222%22%2F%3E%3Cline%20x1%3D%22133%22%20y1%3D%2240%22%20x2%3D%22133%22%20y2%3D%22100%22%20stroke%3D%22currentColor%22%2F%3E%3Cline%20x1%3D%22246%22%20y1%3D%2240%22%20x2%3D%22246%22%20y2%3D%22100%22%20stroke%3D%22currentColor%22%2F%3E%3Cline%20x1%3D%22359%22%20y1%3D%2240%22%20x2%3D%22359%22%20y2%3D%22100%22%20stroke%3D%22currentColor%22%2F%3E%3Cline%20x1%3D%22472%22%20y1%3D%2240%22%20x2%3D%22472%22%20y2%3D%22100%22%20stroke%3D%22currentColor%22%2F%3E%3Cline%20x1%3D%22585%22%20y1%3D%2240%22%20x2%3D%22585%22%20y2%3D%22100%22%20stroke%3D%22currentColor%22%2F%3E%3Ctext%20x%3D%2276%22%20y%3D%2275%22%20text-anchor%3D%22middle%22%20font-size%3D%2216%22%3EByte%201%3C%2Ftext%3E%3Ctext%20x%3D%22189%22%20y%3D%2275%22%20text-anchor%3D%22middle%22%20font-size%3D%2216%22%3EByte%202%3C%2Ftext%3E%3Ctext%20x%3D%22302%22%20y%3D%2275%22%20text-anchor%3D%22middle%22%20font-size%3D%2216%22%3EByte%203%3C%2Ftext%3E%3Ctext%20x%3D%22415%22%20y%3D%2275%22%20text-anchor%3D%22middle%22%20font-size%3D%2216%22%3EByte%204%3C%2Ftext%3E%3Ctext%20x%3D%22528%22%20y%3D%2275%22%20text-anchor%3D%22middle%22%20font-size%3D%2216%22%3EByte%205%3C%2Ftext%3E%3Ctext%20x%3D%22641%22%20y%3D%2275%22%20text-anchor%3D%22middle%22%20font-size%3D%2216%22%3EByte%206%3C%2Ftext%3E%3C%2Fsvg%3E)
+
+Java simply mirrors the kernel's representation.
+
+This is another systems principle.
+
+> APIs should preserve the underlying representation whenever possible.
+
+# Part 4: Discovering `null`
+
+Our first implementation crashed.
+
+Exception:
+
+```
+NullPointerException
+```
+
+Cause:
+
+`lo`
+
+returned
+
+```
+null
+```
+
+for
+
+```
+getHardwareAddress()
+```
+
+## Why?
+
+Loopback is not a physical network card.
+
+It has no hardware burned-in address.
+
+Therefore
+
+```
+getHardwareAddress()
+```
+
+returns
+
+```
+null
+```
+
+instead of an array.
+
+## Engineering Lesson
+
+Never assume operating system APIs always return objects.
+
+Possible outcomes include:
+
+- valid object
+    
+- empty collection
+    
+- null
+    
+- exception
+    
+
+Robust software treats all of these as expected possibilities.
+
+# Part 5: `continue`
+
+We solved the crash with
+
+```
+if (mac == null) {
+    System.out.println(ni.getName() + " has no MAC address.");
+    continue;
+}
+```
+
+## What `continue` Actually Does
+
+We are inside this loop.
+
+```
+lo
+wlan1
+eth21
+```
+
+Execution:
+
+![](data:image/svg+xml;charset=utf-8,%3Csvg%20font-family%3D%22-apple-system-body%2C%20ui-sans-serif%2C%20-apple-system%2C%20system-ui%2C%20%26quot%3BSegoe%20UI%26quot%3B%2C%20Helvetica%2C%20%26quot%3BApple%20Color%20Emoji%26quot%3B%2C%20Arial%2C%20sans-serif%2C%20%26quot%3BSegoe%20UI%20Emoji%26quot%3B%2C%20%26quot%3BSegoe%20UI%20Symbol%26quot%3B%22%20font-weight%3D%22400%22%20data-d-component%3D%22svg%22%20fill%3D%22currentColor%22%20style%3D%22color%3Argb\(255%2C%20255%2C%20255\)%22%20viewBox%3D%220%200%20520%20220%22%20width%3D%22100%25%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Crect%20x%3D%22160%22%20y%3D%2220%22%20width%3D%22200%22%20height%3D%2240%22%20rx%3D%228%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%2F%3E%3Ctext%20x%3D%22260%22%20y%3D%2245%22%20text-anchor%3D%22middle%22%20font-size%3D%2216%22%3EProcess%20lo%3C%2Ftext%3E%3Cline%20x1%3D%22260%22%20y1%3D%2260%22%20x2%3D%22260%22%20y2%3D%2290%22%20stroke%3D%22currentColor%22%20stroke-width%3D%222%22%2F%3E%3Cpolygon%20points%3D%22254%2C84%20260%2C96%20266%2C84%22%20fill%3D%22currentColor%22%2F%3E%3Crect%20x%3D%22140%22%20y%3D%2296%22%20width%3D%22240%22%20height%3D%2240%22%20rx%3D%228%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%2F%3E%3Ctext%20x%3D%22260%22%20y%3D%22121%22%20text-anchor%3D%22middle%22%20font-size%3D%2215%22%3EMAC%20is%20null%3C%2Ftext%3E%3Cline%20x1%3D%22260%22%20y1%3D%22136%22%20x2%3D%22260%22%20y2%3D%22166%22%20stroke%3D%22currentColor%22%20stroke-width%3D%222%22%2F%3E%3Cpolygon%20points%3D%22254%2C160%20260%2C172%20266%2C160%22%20fill%3D%22currentColor%22%2F%3E%3Crect%20x%3D%22120%22%20y%3D%22172%22%20width%3D%22280%22%20height%3D%2240%22%20rx%3D%228%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%2F%3E%3Ctext%20x%3D%22260%22%20y%3D%22197%22%20text-anchor%3D%22middle%22%20font-size%3D%2215%22%3Econtinue%20%E2%86%92%20Process%20wlan1%20next%3C%2Ftext%3E%3C%2Fsvg%3E)
+
+Without `continue`,
+
+the program would still execute
+
+```
+for (byte b : mac)
+```
+
+and crash.
+
+Important distinction:
+
+|Keyword|Effect|
+|---|---|
+|`continue`|Skip current iteration|
+|`break`|Exit loop completely|
+
+# Part 6: The Signed Byte Problem
+
+This became today's deepest low-level concept.
+
+Raw output:
+
+```
+[-80, 104, -26, 119, -101, -15]
+```
+
+At first glance,
+
+this looks wrong.
+
+The hardware never stored negative numbers.
+
+## Why Java Shows Negative Values
+
+Java's
+
+```
+byte
+```
+
+is signed.
+
+Range:
+
+−128 to 127-128\text{ to }127−128 to 127
+
+Example.
+
+Binary:
+
+```
+10110000
+```
+
+Hardware interpretation:
+
+```
+B0
+```
+
+Java interpretation:
+
+```
+-80
+```
+
+The bits never changed.
+
+Only the interpretation changed.
+
+This distinction is fundamental for networking because packet headers are simply sequences of bits.
+
+# Part 7: The `& 0xFF` Operation
+
+This became our first real bit-manipulation technique.
+
+We used
+
+```
+b & 0xFF
+```
+
+## What is `0xFF`?
+
+`0x`
+
+means hexadecimal.
+
+`FF`
+
+equals
+
+```
+11111111
+```
+
+in binary.
+
+Eight ones.
+
+## How AND Works
+
+Rule:
+
+|A|B|Result|
+|---|---|---|
+|0|0|0|
+|0|1|0|
+|1|0|0|
+|1|1|1|
+
+When we AND with
+
+```
+11111111
+```
+
+we preserve all eight bits.
+
+Example.
+
+![](data:image/svg+xml;charset=utf-8,%3Csvg%20font-family%3D%22-apple-system-body%2C%20ui-sans-serif%2C%20-apple-system%2C%20system-ui%2C%20%26quot%3BSegoe%20UI%26quot%3B%2C%20Helvetica%2C%20%26quot%3BApple%20Color%20Emoji%26quot%3B%2C%20Arial%2C%20sans-serif%2C%20%26quot%3BSegoe%20UI%20Emoji%26quot%3B%2C%20%26quot%3BSegoe%20UI%20Symbol%26quot%3B%22%20font-weight%3D%22400%22%20data-d-component%3D%22svg%22%20fill%3D%22currentColor%22%20style%3D%22color%3Argb\(255%2C%20255%2C%20255\)%22%20viewBox%3D%220%200%20420%20140%22%20width%3D%22100%25%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Crect%20x%3D%2210%22%20y%3D%2210%22%20width%3D%22400%22%20height%3D%2230%22%20rx%3D%226%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%2255%22%20width%3D%22400%22%20height%3D%2230%22%20rx%3D%226%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%22100%22%20width%3D%22400%22%20height%3D%2230%22%20rx%3D%226%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%2F%3E%3Cline%20x1%3D%2260%22%20y1%3D%2210%22%20x2%3D%2260%22%20y2%3D%22130%22%20stroke%3D%22currentColor%22%2F%3E%3Cline%20x1%3D%22110%22%20y1%3D%2210%22%20x2%3D%22110%22%20y2%3D%22130%22%20stroke%3D%22currentColor%22%2F%3E%3Cline%20x1%3D%22160%22%20y1%3D%2210%22%20x2%3D%22160%22%20y2%3D%22130%22%20stroke%3D%22currentColor%22%2F%3E%3Cline%20x1%3D%22210%22%20y1%3D%2210%22%20x2%3D%22210%22%20y2%3D%22130%22%20stroke%3D%22currentColor%22%2F%3E%3Cline%20x1%3D%22260%22%20y1%3D%2210%22%20x2%3D%22260%22%20y2%3D%22130%22%20stroke%3D%22currentColor%22%2F%3E%3Cline%20x1%3D%22310%22%20y1%3D%2210%22%20x2%3D%22310%22%20y2%3D%22130%22%20stroke%3D%22currentColor%22%2F%3E%3Cline%20x1%3D%22360%22%20y1%3D%2210%22%20x2%3D%22360%22%20y2%3D%22130%22%20stroke%3D%22currentColor%22%2F%3E%3Ctext%20x%3D%2235%22%20y%3D%2230%22%20text-anchor%3D%22middle%22%20font-size%3D%2216%22%3E1%3C%2Ftext%3E%3Ctext%20x%3D%2285%22%20y%3D%2230%22%20text-anchor%3D%22middle%22%20font-size%3D%2216%22%3E0%3C%2Ftext%3E%3Ctext%20x%3D%22135%22%20y%3D%2230%22%20text-anchor%3D%22middle%22%20font-size%3D%2216%22%3E1%3C%2Ftext%3E%3Ctext%20x%3D%22185%22%20y%3D%2230%22%20text-anchor%3D%22middle%22%20font-size%3D%2216%22%3E1%3C%2Ftext%3E%3Ctext%20x%3D%22235%22%20y%3D%2230%22%20text-anchor%3D%22middle%22%20font-size%3D%2216%22%3E0%3C%2Ftext%3E%3Ctext%20x%3D%22285%22%20y%3D%2230%22%20text-anchor%3D%22middle%22%20font-size%3D%2216%22%3E0%3C%2Ftext%3E%3Ctext%20x%3D%22335%22%20y%3D%2230%22%20text-anchor%3D%22middle%22%20font-size%3D%2216%22%3E0%3C%2Ftext%3E%3Ctext%20x%3D%22385%22%20y%3D%2230%22%20text-anchor%3D%22middle%22%20font-size%3D%2216%22%3E0%3C%2Ftext%3E%3Ctext%20x%3D%2235%22%20y%3D%2275%22%20text-anchor%3D%22middle%22%20font-size%3D%2216%22%3E1%3C%2Ftext%3E%3Ctext%20x%3D%2285%22%20y%3D%2275%22%20text-anchor%3D%22middle%22%20font-size%3D%2216%22%3E1%3C%2Ftext%3E%3Ctext%20x%3D%22135%22%20y%3D%2275%22%20text-anchor%3D%22middle%22%20font-size%3D%2216%22%3E1%3C%2Ftext%3E%3Ctext%20x%3D%22185%22%20y%3D%2275%22%20text-anchor%3D%22middle%22%20font-size%3D%2216%22%3E1%3C%2Ftext%3E%3Ctext%20x%3D%22235%22%20y%3D%2275%22%20text-anchor%3D%22middle%22%20font-size%3D%2216%22%3E1%3C%2Ftext%3E%3Ctext%20x%3D%22285%22%20y%3D%2275%22%20text-anchor%3D%22middle%22%20font-size%3D%2216%22%3E1%3C%2Ftext%3E%3Ctext%20x%3D%22335%22%20y%3D%2275%22%20text-anchor%3D%22middle%22%20font-size%3D%2216%22%3E1%3C%2Ftext%3E%3Ctext%20x%3D%22385%22%20y%3D%2275%22%20text-anchor%3D%22middle%22%20font-size%3D%2216%22%3E1%3C%2Ftext%3E%3Ctext%20x%3D%2235%22%20y%3D%22120%22%20text-anchor%3D%22middle%22%20font-size%3D%2216%22%3E1%3C%2Ftext%3E%3Ctext%20x%3D%2285%22%20y%3D%22120%22%20text-anchor%3D%22middle%22%20font-size%3D%2216%22%3E0%3C%2Ftext%3E%3Ctext%20x%3D%22135%22%20y%3D%22120%22%20text-anchor%3D%22middle%22%20font-size%3D%2216%22%3E1%3C%2Ftext%3E%3Ctext%20x%3D%22185%22%20y%3D%22120%22%20text-anchor%3D%22middle%22%20font-size%3D%2216%22%3E1%3C%2Ftext%3E%3Ctext%20x%3D%22235%22%20y%3D%22120%22%20text-anchor%3D%22middle%22%20font-size%3D%2216%22%3E0%3C%2Ftext%3E%3Ctext%20x%3D%22285%22%20y%3D%22120%22%20text-anchor%3D%22middle%22%20font-size%3D%2216%22%3E0%3C%2Ftext%3E%3Ctext%20x%3D%22335%22%20y%3D%22120%22%20text-anchor%3D%22middle%22%20font-size%3D%2216%22%3E0%3C%2Ftext%3E%3Ctext%20x%3D%22385%22%20y%3D%22120%22%20text-anchor%3D%22middle%22%20font-size%3D%2216%22%3E0%3C%2Ftext%3E%3C%2Fsvg%3E)
+
+Result:
+
+```
+176
+```
+
+Then
+
+```
+176 → B0
+```
+
+This operation will appear repeatedly when parsing network packets later.
+
+# Part 8: Formatting Hexadecimal
+
+We introduced
+
+```
+System.out.printf("%02X", mac[i] & 0xFF);
+```
+
+Instead of treating this as magic,
+
+we broke it down.
+
+|Part|Meaning|
+|---|---|
+|`%`|Formatting starts|
+|`0`|Pad with zero|
+|`2`|Always two characters|
+|`X`|Uppercase hexadecimal|
+
+Examples.
+
+|Decimal|Output|
+|---|---|
+|5|`05`|
+|15|`0F`|
+|176|`B0`|
+
+This guarantees every MAC byte occupies exactly two characters.
+
+# Boundary Condition Decision
+
+We needed to insert colons.
+
+Two approaches existed.
+
+### Option A
+
+Print colon after every byte.
+
+Problem:
+
+```
+B0:68:E6:
+```
+
+Trailing separator.
+
+### Option B (Chosen)
+
+Print colon before every byte except the first.
+
+Implementation:
+
+```
+if (i > 0)
+    System.out.print(":");
+```
+
+This avoids cleanup afterwards.
+
+This is an example of solving a boundary condition before it becomes a bug.
+
+# Final MAC Output
+
+Your machine produced:
+
+|Interface|MAC|
+|---|---|
+|`wlan1`|`B0:68:E6:77:9B:F1`|
+|`eth21`|`00:15:5D:8C:5D:96`|
+|`lo`|No MAC|
+
+This was not hardcoded.
+
+We built the complete conversion pipeline ourselves.
+
+# Binary-to-Human Pipeline
+
+Today's entire implementation can be summarized as
+
+![](data:image/svg+xml;charset=utf-8,%3Csvg%20font-family%3D%22-apple-system-body%2C%20ui-sans-serif%2C%20-apple-system%2C%20system-ui%2C%20%26quot%3BSegoe%20UI%26quot%3B%2C%20Helvetica%2C%20%26quot%3BApple%20Color%20Emoji%26quot%3B%2C%20Arial%2C%20sans-serif%2C%20%26quot%3BSegoe%20UI%20Emoji%26quot%3B%2C%20%26quot%3BSegoe%20UI%20Symbol%26quot%3B%22%20font-weight%3D%22400%22%20data-d-component%3D%22svg%22%20fill%3D%22currentColor%22%20style%3D%22color%3Argb\(255%2C%20255%2C%20255\)%22%20viewBox%3D%220%200%20900%20120%22%20width%3D%22100%25%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Crect%20x%3D%2220%22%20y%3D%2230%22%20width%3D%22110%22%20height%3D%2240%22%20rx%3D%228%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%2F%3E%3Ctext%20x%3D%2275%22%20y%3D%2255%22%20text-anchor%3D%22middle%22%20font-size%3D%2213%22%3ENIC%3C%2Ftext%3E%3Crect%20x%3D%22160%22%20y%3D%2230%22%20width%3D%22140%22%20height%3D%2240%22%20rx%3D%228%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%2F%3E%3Ctext%20x%3D%22230%22%20y%3D%2255%22%20text-anchor%3D%22middle%22%20font-size%3D%2213%22%3EKernel%3C%2Ftext%3E%3Crect%20x%3D%22330%22%20y%3D%2230%22%20width%3D%22140%22%20height%3D%2240%22%20rx%3D%228%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%2F%3E%3Ctext%20x%3D%22400%22%20y%3D%2255%22%20text-anchor%3D%22middle%22%20font-size%3D%2213%22%3Ebyte%5B%5D%3C%2Ftext%3E%3Crect%20x%3D%22500%22%20y%3D%2230%22%20width%3D%22150%22%20height%3D%2240%22%20rx%3D%228%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%2F%3E%3Ctext%20x%3D%22575%22%20y%3D%2255%22%20text-anchor%3D%22middle%22%20font-size%3D%2213%22%3E%26amp%3B%200xFF%3C%2Ftext%3E%3Crect%20x%3D%22680%22%20y%3D%2230%22%20width%3D%22190%22%20height%3D%2240%22%20rx%3D%228%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%2F%3E%3Ctext%20x%3D%22775%22%20y%3D%2255%22%20text-anchor%3D%22middle%22%20font-size%3D%2213%22%3E%2502X%20%E2%86%92%20B0%3A68%3AE6...%3C%2Ftext%3E%3Cline%20x1%3D%22130%22%20y1%3D%2250%22%20x2%3D%22160%22%20y2%3D%2250%22%20stroke%3D%22currentColor%22%20stroke-width%3D%222%22%2F%3E%3Cline%20x1%3D%22300%22%20y1%3D%2250%22%20x2%3D%22330%22%20y2%3D%2250%22%20stroke%3D%22currentColor%22%20stroke-width%3D%222%22%2F%3E%3Cline%20x1%3D%22470%22%20y1%3D%2250%22%20x2%3D%22500%22%20y2%3D%2250%22%20stroke%3D%22currentColor%22%20stroke-width%3D%222%22%2F%3E%3Cline%20x1%3D%22650%22%20y1%3D%2250%22%20x2%3D%22680%22%20y2%3D%2250%22%20stroke%3D%22currentColor%22%20stroke-width%3D%222%22%2F%3E%3Cpolygon%20points%3D%22154%2C44%20160%2C50%20154%2C56%22%20fill%3D%22currentColor%22%2F%3E%3Cpolygon%20points%3D%22324%2C44%20330%2C50%20324%2C56%22%20fill%3D%22currentColor%22%2F%3E%3Cpolygon%20points%3D%22494%2C44%20500%2C50%20494%2C56%22%20fill%3D%22currentColor%22%2F%3E%3Cpolygon%20points%3D%22674%2C44%20680%2C50%20674%2C56%22%20fill%3D%22currentColor%22%2F%3E%3C%2Fsvg%3E)
+
+This exact workflow will later be reused for:
+
+- IPv4 parsing
+    
+- TCP headers
+    
+- UDP headers
+    
+- Protocol flags
+    
+- Packet serialization
+    
+
+# Current `network-inspector` Architecture
+
+![](data:image/svg+xml;charset=utf-8,%3Csvg%20font-family%3D%22-apple-system-body%2C%20ui-sans-serif%2C%20-apple-system%2C%20system-ui%2C%20%26quot%3BSegoe%20UI%26quot%3B%2C%20Helvetica%2C%20%26quot%3BApple%20Color%20Emoji%26quot%3B%2C%20Arial%2C%20sans-serif%2C%20%26quot%3BSegoe%20UI%20Emoji%26quot%3B%2C%20%26quot%3BSegoe%20UI%20Symbol%26quot%3B%22%20font-weight%3D%22400%22%20data-d-component%3D%22svg%22%20fill%3D%22currentColor%22%20style%3D%22color%3Argb\(255%2C%20255%2C%20255\)%22%20viewBox%3D%220%200%20900%20120%22%20width%3D%22100%25%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Crect%20x%3D%2220%22%20y%3D%2230%22%20width%3D%22120%22%20height%3D%2240%22%20rx%3D%228%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%2F%3E%3Ctext%20x%3D%2280%22%20y%3D%2255%22%20text-anchor%3D%22middle%22%20font-size%3D%2213%22%3ECollect%3C%2Ftext%3E%3Crect%20x%3D%22170%22%20y%3D%2230%22%20width%3D%22120%22%20height%3D%2240%22%20rx%3D%228%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%2F%3E%3Ctext%20x%3D%22230%22%20y%3D%2255%22%20text-anchor%3D%22middle%22%20font-size%3D%2213%22%3EFilter%20UP%3C%2Ftext%3E%3Crect%20x%3D%22320%22%20y%3D%2230%22%20width%3D%22140%22%20height%3D%2240%22%20rx%3D%228%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%2F%3E%3Ctext%20x%3D%22390%22%20y%3D%2255%22%20text-anchor%3D%22middle%22%20font-size%3D%2213%22%3ERead%20MAC%3C%2Ftext%3E%3Crect%20x%3D%22490%22%20y%3D%2230%22%20width%3D%22150%22%20height%3D%2240%22%20rx%3D%228%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%2F%3E%3Ctext%20x%3D%22565%22%20y%3D%2255%22%20text-anchor%3D%22middle%22%20font-size%3D%2213%22%3EFormat%20MAC%3C%2Ftext%3E%3Crect%20x%3D%22670%22%20y%3D%2230%22%20width%3D%22200%22%20height%3D%2240%22%20rx%3D%228%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%2F%3E%3Ctext%20x%3D%22770%22%20y%3D%2255%22%20text-anchor%3D%22middle%22%20font-size%3D%2213%22%3EInspect%20IP%20\(next\)%3C%2Ftext%3E%3Cline%20x1%3D%22140%22%20y1%3D%2250%22%20x2%3D%22170%22%20y2%3D%2250%22%20stroke%3D%22currentColor%22%20stroke-width%3D%222%22%2F%3E%3Cline%20x1%3D%22290%22%20y1%3D%2250%22%20x2%3D%22320%22%20y2%3D%2250%22%20stroke%3D%22currentColor%22%20stroke-width%3D%222%22%2F%3E%3Cline%20x1%3D%22460%22%20y1%3D%2250%22%20x2%3D%22490%22%20y2%3D%2250%22%20stroke%3D%22currentColor%22%20stroke-width%3D%222%22%2F%3E%3Cline%20x1%3D%22640%22%20y1%3D%2250%22%20x2%3D%22670%22%20y2%3D%2250%22%20stroke%3D%22currentColor%22%20stroke-width%3D%222%22%2F%3E%3Cpolygon%20points%3D%22164%2C44%20170%2C50%20164%2C56%22%20fill%3D%22currentColor%22%2F%3E%3Cpolygon%20points%3D%22314%2C44%20320%2C50%20314%2C56%22%20fill%3D%22currentColor%22%2F%3E%3Cpolygon%20points%3D%22484%2C44%20490%2C50%20484%2C56%22%20fill%3D%22currentColor%22%2F%3E%3Cpolygon%20points%3D%22664%2C44%20670%2C50%20664%2C56%22%20fill%3D%22currentColor%22%2F%3E%3C%2Fsvg%3E)
+
+Notice something important.
+
+We're still not writing socket code.
+
+We're building the startup diagnostics that every real Campus Edge node will execute before opening its first TCP connection.
+
+# Engineering Takeaways
+
+1. `isUp()` measures interface operability, not internet access.
+    
+2. A network interface can be software-only, which is why `getHardwareAddress()` may return `null`.
+    
+3. The kernel returns raw binary data, and applications are responsible for formatting it.
+    
+4. `& 0xFF` is a fundamental networking operation for converting signed Java bytes into unsigned values.
+    
+5. Hexadecimal is a representation, not the stored data.
+    
+6. Boundary conditions should be designed deliberately, which is why we printed colons before every byte except the first.
+    
+7. Campus Edge should choose interfaces based on properties, not names, because names vary across operating systems and environments.
+    
+
+# Preview of Session 4
+
+The next session completes the Node Identity Card by interrogating `NetworkInterface` for IP addresses.
+
+We'll answer:
+
+- Why one interface can have multiple IP addresses.
+    
+- IPv4 vs IPv6 for Campus Edge's MVP.
+    
+- Why `127.0.0.1` and `::1` exist.
+    
+- How to select the correct address to advertise to other laptops.
+    
+
+By the end of Session 4, `network-inspector` will know enough about the machine to make the same first-pass networking decision that a real Campus Edge node makes before opening its first socket.
