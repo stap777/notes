@@ -2827,3 +2827,504 @@ We'll decode every symbol (`argc`, `argv`, `char`, pointers, arrays) from first 
 |Unix argument model|Future CLI commands like `nodes`, `task`, `compute`|
 
 These aren't isolated C concepts. They are the contracts that every later compiler stage will rely on, from lexical analysis to parsing, semantic analysis, bytecode generation, and eventually executing Campus Edge commands across distributed campus nodes.
+
+# 24/09/26 12:15 - 01:31 -- 2:00 - 2:30 (76)
+
+## Campus Edge – Compiler & OS Team
+
+## Month 1 • Day 3 (90 min)
+
+### Topic: Structs, Stack Memory, and the Cursor Model
+
+> **Goal:** Understand how C represents data in memory before implementing the first lexer component. Today's outcome was not writing `advance()`, but understanding where the `Cursor` lives, why `struct` exists, and how function memory works.
+
+---
+
+## Session Outcomes
+
+By the end of today we established:
+
+- A `struct` is a **blueprint (user-defined type)**, not an object.
+    
+- Objects created from a `struct` occupy real memory.
+    
+- Local variables live on the **stack** by default.
+    
+- C does **not** automatically initialize local variables.
+    
+- Function calls create **stack frames**.
+    
+- Stack frames disappear using **Last-In, First-Out (LIFO)** behavior.
+    
+- Our lexer's `Cursor` will eventually live on the stack while `main()` executes.
+    
+
+---
+
+## 1. Recap Corrections from Day 2
+
+Before starting new material, we corrected yesterday's misconceptions.
+
+## What the lexer actually receives
+
+Incorrect mental model:
+
+> "The lexer receives strings or keywords."
+
+Correct model:
+
+> The operating system provides a **stream of raw bytes**.
+
+Example:
+
+Source:
+
+```text
+nodes
+```
+
+The lexer initially receives:
+
+|Index|Byte|
+|---|---|
+|0|`0x6E`|
+|1|`0x6F`|
+|2|`0x64`|
+|3|`0x65`|
+|4|`0x73`|
+
+Only after scanning these bytes does it produce:
+
+```text
+KEYWORD(nodes)
+```
+
+This distinction is fundamental.
+
+---
+
+## 2. Why `struct` Exists
+
+Suppose our lexer needs four pieces of information.
+
+- position
+    
+- line
+    
+- column
+    
+- current
+    
+
+Without grouping them we'd write:
+
+```c
+int position;
+int line;
+int column;
+int current;
+```
+
+This becomes difficult when multiple cursors exist.
+
+## The Purpose of `struct`
+
+A `struct` lets us create a **new data type** that groups related fields together.
+
+Think of it like a student ID card.
+
+Instead of carrying:
+
+- one paper for your name,
+    
+- another for your roll number,
+    
+- another for your branch,
+    
+
+everything belongs to one card.
+
+The same idea applies here.
+
+---
+
+## 3. Blueprint vs Object
+
+This was today's most important concept.
+
+## Blueprint
+
+```c
+struct Cursor
+```
+
+This **does not** create memory.
+
+It only says:
+
+> "There is a new type called `Cursor`."
+
+Think of it as an architect's drawing.
+
+## Object
+
+Later:
+
+```c
+struct Cursor cursor;
+```
+
+Now memory is actually reserved.
+
+Important distinction:
+
+|Blueprint|Object|
+|---|---|
+|`struct Cursor`|`cursor`|
+|Type|Instance|
+|No memory|Real memory|
+
+This is similar to classes and objects in OOP, although `struct` is primarily a **data layout**, not a bundle of behavior.
+
+---
+
+## 4. Memory Layout of a Struct
+
+Our first version contains one field.
+
+```c
+struct Cursor {
+    int position;
+};
+```
+
+Assuming:
+
+```text
+int = 4 bytes
+```
+
+Memory becomes:
+
+```text
+Cursor
+
++------------+
+| position   |
++------------+
+```
+
+Later the full cursor becomes:
+
+```text
+Cursor
+
++------------+
+| position   |
++------------+
+| line       |
++------------+
+| column     |
++------------+
+| current    |
++------------+
+```
+
+Before discussing padding, this occupies:
+
+---
+
+## 5. What `position` Represents
+
+`position` is **not** the current character.
+
+It is the **byte index** inside the input stream.
+
+Example:
+
+```text
+nodes
+```
+
+|Position|Meaning|
+|---|---|
+|0|first byte|
+|1|second byte|
+|4|last byte|
+
+When `advance()` runs:
+
+```text
+position++
+```
+
+The cursor moves to the next byte.
+
+This keeps scanning a linear operation.
+
+---
+
+## 6. Creating a Real Cursor
+
+We finally created our first real object.
+
+```c
+struct Cursor cursor;
+```
+
+At this moment:
+
+- memory is reserved,
+    
+- the object exists,
+    
+- but its fields are **not initialized**.
+    
+
+This introduced one of C's biggest differences from Java.
+
+---
+
+## 7. Uninitialized Variables
+
+Java usually initializes object fields.
+
+C does not.
+
+Example:
+
+```c
+struct Cursor cursor;
+```
+
+Immediately reading:
+
+```c
+cursor.position
+```
+
+produces an **indeterminate value**.
+
+Important wording:
+
+Avoid saying "random."
+
+More accurate:
+
+> The memory already contained bits from previous use, and C leaves them untouched.
+
+Analogy:
+
+A rented whiteboard still contains yesterday's writing until someone erases it.
+
+C intentionally avoids automatic clearing for performance.
+
+---
+
+## 8. Where Does `cursor` Live?
+
+This introduced our first memory region.
+
+The **stack**.
+
+## What is the Stack?
+
+Every function receives its own temporary workspace.
+
+Think of a stack of trays.
+
+- Put a tray on top.
+    
+- Remove the top tray first.
+    
+
+This is:
+
+> **Last-In, First-Out (LIFO)**
+
+When:
+
+```c
+int main() {
+    struct Cursor cursor;
+}
+```
+
+runs,
+
+`cursor` lives inside **main's stack frame**.
+
+---
+
+## 9. Stack Frames
+
+Every function call creates its own workspace.
+
+Example:
+
+```text
+main()
+   ↓
+tokenize()
+   ↓
+scanIdentifier()
+```
+
+Stack:
+
+```text
+Top
+
+scanIdentifier()
+tokenize()
+main()
+```
+
+When `scanIdentifier()` returns:
+
+```text
+Top
+
+tokenize()
+main()
+```
+
+Only the most recent function disappears.
+
+This behavior makes recursive function calls possible.
+
+---
+
+## 10. What Happens When `main()` Ends?
+
+Earlier we learned:
+
+```c
+return 0;
+```
+
+reports success.
+
+Today we answered another question.
+
+What happens to `cursor`?
+
+Answer:
+
+The stack frame belonging to `main()` is removed.
+
+Important detail:
+
+The CPU does **not** erase every byte.
+
+Instead,
+
+a register called the **Stack Pointer (SP)** simply moves back.
+
+The memory becomes available for reuse.
+
+This explains why later uninitialized variables may contain old values.
+
+---
+
+## 11. The Stack Pointer (Concept)
+
+We only introduced the intuition today.
+
+```text
+Stack
+
++-------------+
+| cursor      |
++-------------+
+      ↑
+      SP
+```
+
+When a function returns,
+
+the Stack Pointer moves,
+
+making that workspace inactive.
+
+We'll study SP with assembly later.
+
+---
+
+## Why Today's Concepts Matter for Campus Edge
+
+Our future compiler will look like this.
+
+```text
+main()
+   ↓
+compile()
+   ↓
+tokenize()
+   ↓
+scanIdentifier()
+```
+
+Every function receives its own temporary workspace.
+
+When `scanIdentifier()` finishes,
+
+its workspace disappears automatically,
+
+while `tokenize()` continues safely.
+
+This memory model becomes essential for:
+
+- lexer state
+    
+- recursive-descent parsing
+    
+- AST construction
+    
+- function calls
+    
+- the Campus Edge runtime
+    
+
+---
+
+## Engineering Decisions Locked Today
+
+|Decision|Reason|
+|---|---|
+|Use `struct` for `Cursor`|Group related lexer state|
+|Store `position` as an index|Simple byte-stream scanning|
+|Local `Cursor` lives on the stack|Automatic lifetime|
+|Don't rely on automatic initialization|Matches C's memory model|
+|Treat stack as LIFO|Matches function-call behavior|
+
+---
+
+## Git Checkpoint
+
+Today's work established the memory model for the lexer.
+
+Suggested commit:
+
+```bash
+git commit -m "feat(compiler): establish cursor memory model and stack behavior"
+```
+
+---
+
+## Tomorrow's Session (Day 4 Preview)
+
+Tomorrow we'll write our **first real C function**.
+
+We'll build `advance()` from scratch and introduce:
+
+- the address-of operator (`&`)
+    
+- why passing a struct by value is different from passing its address
+    
+- how a function can modify the actual `Cursor` instead of a temporary copy
+    
+- our first complete lexer operation on a real byte stream
+    
+
+This will be the first reusable component that later plugs directly into the Campus Edge scripting language.

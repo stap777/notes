@@ -658,3 +658,497 @@ Since our production node will be Java, today's implementation belongs in Java.
 
 But we'll still discuss what the OS is doing underneath.
 
+
+
+# 23/09/26 
+
+# Campus Edge Engineering Notebook
+
+Team: Networking Team
+
+Session: 2
+
+Roadmap Position: Phase 1 → Month 1 (TCP/IP, Sockets, HTTP/DNS Basics)
+
+Build Artifact: `network-inspector` v0.2
+
+Git Commit
+
+```
+feat(network): list available network interfaces
+```
+
+# Session Objective
+
+Build the first networking utility that every future Campus Edge node will use during startup.
+
+Instead of learning networking in isolation, we built the foundation of node identity discovery.
+
+Before a node can:
+
+- join the cluster,
+    
+- open sockets,
+    
+- send heartbeats,
+    
+- receive tasks,
+    
+
+it must first answer:
+
+> "What networking interfaces do I actually have?"
+
+Today's session solved only that problem.
+
+# What We Built
+
+Current functionality:
+
+- Query the operating system for all network interfaces.
+    
+- Copy them into our own data structure.
+    
+- Display their names.
+    
+
+Current output:
+
+```
+Found 51 network interfaces.
+
+lo
+eth0
+net0
+...
+wlan15
+```
+
+This output is already useful because it proves our program is communicating with the operating system's networking subsystem.
+
+# Engineering Problem We Solved
+
+## Problem
+
+The operating system owns networking information.
+
+Applications should discover that information rather than maintain their own copy.
+
+Instead of hardcoding:
+
+```
+Use Wi-Fi.
+```
+
+we designed the system to:
+
+```
+Ask the OS
+      ↓
+Collect interfaces
+      ↓
+Later decide which one is usable
+```
+
+This separation will become important when Campus Edge runs on different laptops.
+
+# Key Concept 1: Network Interface
+
+## Definition
+
+A network interface is an endpoint through which the operating system can send or receive network packets.
+
+Important realization:
+
+> A network interface is not always physical hardware.
+
+The kernel treats both hardware and software endpoints as interfaces.
+
+### Physical Interfaces
+
+|Interface|Purpose|
+|---|---|
+|Wi-Fi|Wireless communication|
+|Ethernet|Wired communication|
+
+These communicate with real hardware through device drivers.
+
+### Software Interfaces
+
+|Interface|Purpose|
+|---|---|
+|Loopback|Internal communication|
+|VPN|Encrypted tunnel|
+|Docker|Container networking|
+|VirtualBox|Virtual machine networking|
+
+These exist entirely inside the operating system.
+
+## Why This Abstraction Exists
+
+Imagine a VPN.
+
+Without abstraction:
+
+```
+Application
+      ↓
+Wi-Fi
+      ↓
+Internet
+```
+
+Applications would need to understand encryption.
+
+Instead:
+
+```
+Application
+      ↓
+VPN Interface
+      ↓
+Encryption
+      ↓
+Wi-Fi
+```
+
+The application still thinks it's talking to an ordinary network interface.
+
+This is classic operating system design:
+
+> Hide implementation complexity behind a common interface.
+
+# Key Concept 2: Enumeration
+
+This became today's biggest new abstraction.
+
+## What is Enumeration?
+
+An `Enumeration` is an object that lets us read items one at a time.
+
+It behaves like a moving cursor.
+
+Think of it as a conveyor belt.
+
+![](data:image/svg+xml;charset=utf-8,%3Csvg%20font-family%3D%22-apple-system-body%2C%20ui-sans-serif%2C%20-apple-system%2C%20system-ui%2C%20%26quot%3BSegoe%20UI%26quot%3B%2C%20Helvetica%2C%20%26quot%3BApple%20Color%20Emoji%26quot%3B%2C%20Arial%2C%20sans-serif%2C%20%26quot%3BSegoe%20UI%20Emoji%26quot%3B%2C%20%26quot%3BSegoe%20UI%20Symbol%26quot%3B%22%20font-weight%3D%22400%22%20data-d-component%3D%22svg%22%20fill%3D%22currentColor%22%20style%3D%22color%3Argb\(255%2C%20255%2C%20255\)%22%20viewBox%3D%220%200%20700%20180%22%20width%3D%22100%25%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Crect%20x%3D%2230%22%20y%3D%2250%22%20width%3D%22120%22%20height%3D%2270%22%20rx%3D%2210%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%222%22%2F%3E%3Ctext%20x%3D%2290%22%20y%3D%2290%22%20text-anchor%3D%22middle%22%20font-size%3D%2218%22%3EWi-Fi%3C%2Ftext%3E%3Crect%20x%3D%22180%22%20y%3D%2250%22%20width%3D%22120%22%20height%3D%2270%22%20rx%3D%2210%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%222%22%2F%3E%3Ctext%20x%3D%22240%22%20y%3D%2290%22%20text-anchor%3D%22middle%22%20font-size%3D%2218%22%3EEthernet%3C%2Ftext%3E%3Crect%20x%3D%22330%22%20y%3D%2250%22%20width%3D%22120%22%20height%3D%2270%22%20rx%3D%2210%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%222%22%2F%3E%3Ctext%20x%3D%22390%22%20y%3D%2290%22%20text-anchor%3D%22middle%22%20font-size%3D%2218%22%3EVPN%3C%2Ftext%3E%3Crect%20x%3D%22480%22%20y%3D%2250%22%20width%3D%22160%22%20height%3D%2270%22%20rx%3D%2210%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%222%22%2F%3E%3Ctext%20x%3D%22560%22%20y%3D%2290%22%20text-anchor%3D%22middle%22%20font-size%3D%2218%22%3ELoopback%3C%2Ftext%3E%3Cpolygon%20points%3D%2278%2C30%2090%2C18%20102%2C30%22%20fill%3D%22currentColor%22%2F%3E%3Ctext%20x%3D%2290%22%20y%3D%22150%22%20text-anchor%3D%22middle%22%20font-size%3D%2214%22%3EPointer%3C%2Ftext%3E%3C%2Fsvg%3E)
+
+The pointer starts at the first interface.
+
+Every call to `nextElement()` moves it forward.
+
+## Why Java Returns Enumeration
+
+The method
+
+```
+NetworkInterface.getNetworkInterfaces()
+```
+
+returns
+
+```
+Enumeration<NetworkInterface>
+```
+
+because this API was designed in early Java.
+
+Modern Java often uses:
+
+- Iterator
+    
+- Streams
+    
+- Collections
+    
+
+but older system APIs still expose `Enumeration`.
+
+Understanding this prevents treating it as mysterious syntax.
+
+# The Two Operations
+
+## 1. `hasMoreElements()`
+
+```
+interfaces.hasMoreElements();
+```
+
+Purpose:
+
+> Ask whether another interface exists.
+
+Returns:
+
+- `true`
+    
+- `false`
+    
+
+It performs only a check.
+
+Nothing is removed.
+
+## 2. `nextElement()`
+
+```
+NetworkInterface ni = interfaces.nextElement();
+```
+
+This performs two actions simultaneously.
+
+1. Returns the current interface.
+    
+2. Advances the internal pointer.
+    
+
+Example:
+
+|Before|Returned|After|
+|---|---|---|
+|Wi-Fi|Wi-Fi|Ethernet|
+|Ethernet|Ethernet|VPN|
+|VPN|VPN|Loopback|
+|Loopback|Loopback|End|
+
+## Why We Check First
+
+Calling
+
+```
+nextElement();
+```
+
+after reaching the end throws
+
+```
+NoSuchElementException
+```
+
+Therefore the safe pattern is
+
+```
+while (interfaces.hasMoreElements()) {
+    interfaces.nextElement();
+}
+```
+
+This pattern appears repeatedly throughout programming whenever reading sequential data.
+
+# Key Concept 3: Why We Converted to a List
+
+We made an intentional engineering decision.
+
+Instead of printing immediately,
+
+we first stored every interface.
+
+```
+List<NetworkInterface> interfaceList = new ArrayList<>();
+```
+
+Then copied each interface.
+
+Why?
+
+Because we separated two responsibilities.
+
+|Responsibility|Purpose|
+|---|---|
+|Collect|Read from OS|
+|Decide|Choose usable interface|
+
+This creates a reusable design.
+
+Future operations become easy.
+
+```
+Collect
+      ↓
+Filter
+      ↓
+Sort
+      ↓
+Select
+```
+
+Instead of repeatedly asking the operating system.
+
+# Understanding the Loop
+
+```
+while (interfaces.hasMoreElements()) {
+    NetworkInterface networkInterface = interfaces.nextElement();
+    interfaceList.add(networkInterface);
+}
+```
+
+Execution example.
+
+Suppose the OS has
+
+```
+Wi-Fi
+Ethernet
+Loopback
+```
+
+### Iteration 1
+
+- `hasMoreElements()` → `true`
+    
+- `nextElement()` → Wi-Fi
+    
+- Add Wi-Fi to list
+    
+
+### Iteration 2
+
+- `true`
+    
+- Ethernet
+    
+- Add Ethernet
+    
+
+### Iteration 3
+
+- `true`
+    
+- Loopback
+    
+- Add Loopback
+    
+
+### Iteration 4
+
+- `false`
+    
+- Loop exits.
+    
+
+The original Enumeration is now exhausted.
+
+# Memory Diagram
+
+Before copying:
+
+![](data:image/svg+xml;charset=utf-8,%3Csvg%20font-family%3D%22-apple-system-body%2C%20ui-sans-serif%2C%20-apple-system%2C%20system-ui%2C%20%26quot%3BSegoe%20UI%26quot%3B%2C%20Helvetica%2C%20%26quot%3BApple%20Color%20Emoji%26quot%3B%2C%20Arial%2C%20sans-serif%2C%20%26quot%3BSegoe%20UI%20Emoji%26quot%3B%2C%20%26quot%3BSegoe%20UI%20Symbol%26quot%3B%22%20font-weight%3D%22400%22%20data-d-component%3D%22svg%22%20fill%3D%22currentColor%22%20style%3D%22color%3Argb\(255%2C%20255%2C%20255\)%22%20viewBox%3D%220%200%20720%20220%22%20width%3D%22100%25%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Crect%20x%3D%2240%22%20y%3D%2230%22%20width%3D%22640%22%20height%3D%2270%22%20rx%3D%2210%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%222%22%2F%3E%3Ctext%20x%3D%22360%22%20y%3D%2255%22%20text-anchor%3D%22middle%22%20font-size%3D%2218%22%3EOperating%20System%3C%2Ftext%3E%3Ctext%20x%3D%22360%22%20y%3D%2280%22%20text-anchor%3D%22middle%22%20font-size%3D%2214%22%3EWi-Fi%20%7C%20Ethernet%20%7C%20VPN%20%7C%20Loopback%3C%2Ftext%3E%3Cline%20x1%3D%22360%22%20y1%3D%22100%22%20x2%3D%22360%22%20y2%3D%22130%22%20stroke%3D%22currentColor%22%20stroke-width%3D%222%22%2F%3E%3Cpolygon%20points%3D%22354%2C124%20360%2C136%20366%2C124%22%20fill%3D%22currentColor%22%2F%3E%3Crect%20x%3D%22220%22%20y%3D%22136%22%20width%3D%22280%22%20height%3D%2250%22%20rx%3D%2210%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%222%22%2F%3E%3Ctext%20x%3D%22360%22%20y%3D%22166%22%20text-anchor%3D%22middle%22%20font-size%3D%2216%22%3EEnumeration%20\(cursor\)%3C%2Ftext%3E%3C%2Fsvg%3E)
+
+After copying:
+
+![](data:image/svg+xml;charset=utf-8,%3Csvg%20font-family%3D%22-apple-system-body%2C%20ui-sans-serif%2C%20-apple-system%2C%20system-ui%2C%20%26quot%3BSegoe%20UI%26quot%3B%2C%20Helvetica%2C%20%26quot%3BApple%20Color%20Emoji%26quot%3B%2C%20Arial%2C%20sans-serif%2C%20%26quot%3BSegoe%20UI%20Emoji%26quot%3B%2C%20%26quot%3BSegoe%20UI%20Symbol%26quot%3B%22%20font-weight%3D%22400%22%20data-d-component%3D%22svg%22%20fill%3D%22currentColor%22%20style%3D%22color%3Argb\(255%2C%20255%2C%20255\)%22%20viewBox%3D%220%200%20720%20260%22%20width%3D%22100%25%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Crect%20x%3D%2240%22%20y%3D%2230%22%20width%3D%22640%22%20height%3D%2270%22%20rx%3D%2210%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%222%22%2F%3E%3Ctext%20x%3D%22360%22%20y%3D%2255%22%20text-anchor%3D%22middle%22%20font-size%3D%2218%22%3EOperating%20System%3C%2Ftext%3E%3Ctext%20x%3D%22360%22%20y%3D%2280%22%20text-anchor%3D%22middle%22%20font-size%3D%2214%22%3ESource%20of%20Truth%3C%2Ftext%3E%3Cline%20x1%3D%22360%22%20y1%3D%22100%22%20x2%3D%22360%22%20y2%3D%22130%22%20stroke%3D%22currentColor%22%20stroke-width%3D%222%22%2F%3E%3Cpolygon%20points%3D%22354%2C124%20360%2C136%20366%2C124%22%20fill%3D%22currentColor%22%2F%3E%3Crect%20x%3D%22140%22%20y%3D%22136%22%20width%3D%22440%22%20height%3D%2290%22%20rx%3D%2210%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%222%22%2F%3E%3Ctext%20x%3D%22360%22%20y%3D%22162%22%20text-anchor%3D%22middle%22%20font-size%3D%2218%22%3EinterfaceList%3C%2Ftext%3E%3Ctext%20x%3D%22360%22%20y%3D%22188%22%20text-anchor%3D%22middle%22%20font-size%3D%2214%22%3EWi-Fi%20%7C%20Ethernet%20%7C%20VPN%20%7C%20Loopback%3C%2Ftext%3E%3Ctext%20x%3D%22360%22%20y%3D%22208%22%20text-anchor%3D%22middle%22%20font-size%3D%2212%22%3EOur%20reusable%20working%20copy%3C%2Ftext%3E%3C%2Fsvg%3E)
+
+The OS remains the source of truth.
+
+Our program now owns a reusable working copy.
+
+# Unexpected Discovery: 51 Interfaces
+
+Output:
+
+```
+Found 51 network interfaces.
+```
+
+This surprised us.
+
+Instead of assuming something was wrong,
+
+we made an engineering observation.
+
+Interface names alone cannot determine whether an interface is usable.
+
+Examples included
+
+- `lo`
+    
+- `eth0`
+    
+- `wlan0`
+    
+- `ppp0`
+    
+- many additional numbered interfaces.
+    
+
+Rather than guessing,
+
+we postponed the conclusion until we inspect each interface's properties.
+
+This is an important engineering habit.
+
+> Investigate before explaining.
+
+# Campus Edge Architecture Impact
+
+Today's feature becomes part of future node startup.
+
+![](data:image/svg+xml;charset=utf-8,%3Csvg%20font-family%3D%22-apple-system-body%2C%20ui-sans-serif%2C%20-apple-system%2C%20system-ui%2C%20%26quot%3BSegoe%20UI%26quot%3B%2C%20Helvetica%2C%20%26quot%3BApple%20Color%20Emoji%26quot%3B%2C%20Arial%2C%20sans-serif%2C%20%26quot%3BSegoe%20UI%20Emoji%26quot%3B%2C%20%26quot%3BSegoe%20UI%20Symbol%26quot%3B%22%20font-weight%3D%22400%22%20data-d-component%3D%22svg%22%20fill%3D%22currentColor%22%20style%3D%22color%3Argb\(255%2C%20255%2C%20255\)%22%20viewBox%3D%220%200%20820%20120%22%20width%3D%22100%25%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Crect%20x%3D%2220%22%20y%3D%2230%22%20width%3D%22110%22%20height%3D%2250%22%20rx%3D%228%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%2F%3E%3Ctext%20x%3D%2275%22%20y%3D%2260%22%20text-anchor%3D%22middle%22%20font-size%3D%2213%22%3ENode%20Starts%3C%2Ftext%3E%3Crect%20x%3D%22150%22%20y%3D%2230%22%20width%3D%22140%22%20height%3D%2250%22%20rx%3D%228%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%2F%3E%3Ctext%20x%3D%22220%22%20y%3D%2260%22%20text-anchor%3D%22middle%22%20font-size%3D%2213%22%3ECollect%20Interfaces%3C%2Ftext%3E%3Crect%20x%3D%22310%22%20y%3D%2230%22%20width%3D%22140%22%20height%3D%2250%22%20rx%3D%228%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%2F%3E%3Ctext%20x%3D%22380%22%20y%3D%2260%22%20text-anchor%3D%22middle%22%20font-size%3D%2213%22%3EFilter%20Interfaces%3C%2Ftext%3E%3Crect%20x%3D%22470%22%20y%3D%2230%22%20width%3D%22140%22%20height%3D%2250%22%20rx%3D%228%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%2F%3E%3Ctext%20x%3D%22540%22%20y%3D%2260%22%20text-anchor%3D%22middle%22%20font-size%3D%2213%22%3EChoose%20Best%3C%2Ftext%3E%3Crect%20x%3D%22630%22%20y%3D%2230%22%20width%3D%22170%22%20height%3D%2250%22%20rx%3D%228%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%2F%3E%3Ctext%20x%3D%22715%22%20y%3D%2260%22%20text-anchor%3D%22middle%22%20font-size%3D%2213%22%3EBind%20Networking%20Services%3C%2Ftext%3E%3Cline%20x1%3D%22130%22%20y1%3D%2255%22%20x2%3D%22150%22%20y2%3D%2255%22%20stroke%3D%22currentColor%22%20stroke-width%3D%222%22%2F%3E%3Cline%20x1%3D%22290%22%20y1%3D%2255%22%20x2%3D%22310%22%20y2%3D%2255%22%20stroke%3D%22currentColor%22%20stroke-width%3D%222%22%2F%3E%3Cline%20x1%3D%22450%22%20y1%3D%2255%22%20x2%3D%22470%22%20y2%3D%2255%22%20stroke%3D%22currentColor%22%20stroke-width%3D%222%22%2F%3E%3Cline%20x1%3D%22610%22%20y1%3D%2255%22%20x2%3D%22630%22%20y2%3D%2255%22%20stroke%3D%22currentColor%22%20stroke-width%3D%222%22%2F%3E%3Cpolygon%20points%3D%22144%2C49%20150%2C55%20144%2C61%22%20fill%3D%22currentColor%22%2F%3E%3Cpolygon%20points%3D%22304%2C49%20310%2C55%20304%2C61%22%20fill%3D%22currentColor%22%2F%3E%3Cpolygon%20points%3D%22464%2C49%20470%2C55%20464%2C61%22%20fill%3D%22currentColor%22%2F%3E%3Cpolygon%20points%3D%22624%2C49%20630%2C55%20624%2C61%22%20fill%3D%22currentColor%22%2F%3E%3C%2Fsvg%3E)
+
+Today's session completed only the highlighted stage.
+
+That keeps our implementation incremental instead of building premature complexity.
+
+# Code Produced
+
+```
+import java.net.NetworkInterface;
+import java.net.SocketException;
+import java.util.ArrayList;
+import java.util.Enumeration;
+import java.util.List;
+
+public class Main {
+
+    public static void main(String[] args) throws SocketException {
+
+        Enumeration<NetworkInterface> interfaces =
+                NetworkInterface.getNetworkInterfaces();
+
+        List<NetworkInterface> interfaceList = new ArrayList<>();
+
+        while (interfaces.hasMoreElements()) {
+            NetworkInterface networkInterface = interfaces.nextElement();
+            interfaceList.add(networkInterface);
+        }
+
+        System.out.println("Found " + interfaceList.size() + " network interfaces.");
+
+        for (NetworkInterface ni : interfaceList) {
+            System.out.println(ni.getName());
+        }
+    }
+}
+```
+
+# Engineering Takeaways
+
+1. The operating system owns networking state. Applications query it instead of recreating it.
+    
+2. A network interface is an abstraction, not just a physical device.
+    
+3. `Enumeration` is a one-way cursor, which is why we copied its contents into a `List`.
+    
+4. Separate data collection from decision-making. This makes future filtering and interface selection much cleaner.
+    
+5. Unexpected output is evidence, not failure. Finding 51 interfaces gave us a new investigation for the next session instead of something to "fix" immediately.
+    
+
+# Next Session Preview
+
+In Session 3, we'll continue interrogating the same `NetworkInterface` objects instead of jumping to sockets.
+
+We'll ask each interface:
+
+- Are you UP or DOWN?
+    
+- Are you Loopback?
+    
+- Are you Virtual?
+    
+- What is your MAC address?
+    
+- What are your IP addresses?
+    
+
+Then we'll design the MVP interface-selection algorithm that a real Campus Edge node will use before opening its first network socket.

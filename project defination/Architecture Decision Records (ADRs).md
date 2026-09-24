@@ -1,3 +1,4 @@
+
 | ID      | Decision                                           | Reason                         |
 | ------- | -------------------------------------------------- | ------------------------------ |
 | ADR-001 | Node Agent is a background process                 | Continuous monitoring          |

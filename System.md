@@ -1056,3 +1056,321 @@ Notice that procfs stores almost nothing permanently.
 
 It's a live window into the kernel.
 
+# 24/09/26 - 09:10 - 09:50 -- 10:55 - 11:45 (90 min)
+
+## OS Engineering Notebook
+
+Project: Campus Edge Network
+
+Team: Operating Systems
+
+Week 1 • Day 3
+
+Mission: Understand how a user program communicates with the kernel before building the Node Agent's Resource Monitor.
+
+## Sprint Summary
+
+Today we discovered that reading a file is actually a conversation with the kernel.
+
+Instead of memorizing C functions, we reverse-engineered how `cat` works and learned why Linux returns file descriptors instead of repeatedly searching for filenames.
+
+Campus Edge impact: The future Node Agent will use these same mechanisms to read CPU, memory, uptime, and process information from the operating system.
+
+## Concepts Learned
+
+## 1. Command-Line Arguments (`argc` & `argv`)
+
+When a program starts, the shell already separates the command into pieces before the kernel launches it.
+
+Example:
+
+```
+./edge-cat notes.txt
+```
+
+The program receives:
+
+|Value|Meaning|
+|---|---|
+|`argv[0]`|`./edge-cat`|
+|`argv[1]`|`notes.txt`|
+
+`argc` counts how many strings were passed.
+
+|Command|`argc`|
+|---|---|
+|`./edge-cat`|1|
+|`./edge-cat notes.txt`|2|
+|`./edge-cat a.txt b.txt`|3|
+
+Engineering lesson: The shell parses commands. Our program receives the result.
+
+## 2. Defensive Programming
+
+Before using `argv[1]`, we must verify it exists.
+
+Why?
+
+If `argc == 1`, accessing `argv[1]` would use memory that doesn't belong to the program's valid arguments.
+
+Pattern learned:
+
+> Validate first, dereference later.
+
+This same pattern will later apply to:
+
+- pointers
+    
+- sockets
+    
+- file descriptors
+    
+- network packets
+    
+
+## 3. File Descriptors (FD)
+
+A file descriptor is not the file itself.
+
+It's a small integer returned by the kernel that acts like a handle to an already-open resource.
+
+Example:
+
+```
+open("notes.txt")
+        ↓
+returns 3
+```
+
+The kernel already knows:
+
+- where the file is
+    
+- current read position
+    
+- permissions
+    
+
+Future operations reuse that handle.
+
+### Standard File Descriptors
+
+|FD|Connected To|
+|---|---|
+|`0`|stdin (keyboard)|
+|`1`|stdout (terminal)|
+|`2`|stderr (errors)|
+|`3+`|Files opened by the program|
+
+Mental model: Every open file gets its own bookmark.
+
+## 4. File Offsets
+
+Initially I guessed the file might remember where reading stopped.
+
+Actual behavior:
+
+The kernel stores the current read position inside each file descriptor.
+
+Example:
+
+```
+FD 3 → Byte 120
+FD 4 → Byte 0
+```
+
+Two programs can read the same file independently because each has its own offset.
+
+## 5. The `open()` System Call
+
+Conceptually:
+
+```
+Program
+    ↓
+open("notes.txt", O_RDONLY)
+    ↓
+Kernel
+```
+
+The kernel performs checks before returning a file descriptor.
+
+### Kernel Checklist
+
+1. Does the path exist?
+    
+2. Do permissions allow access?
+    
+3. Is the requested operation valid?
+    
+4. Create an Open File Table entry.
+    
+5. Return a file descriptor.
+    
+
+## 6. Why `O_RDONLY`?
+
+We chose read-only access because of the Principle of Least Privilege.
+
+> A program should request only the permissions it actually needs.
+
+This principle appears later in:
+
+- Linux permissions
+    
+- Docker
+    
+- Kubernetes
+    
+- Cloud IAM
+    
+- Campus Edge task execution
+    
+
+## 7. Success vs Failure
+
+`open()` doesn't print messages.
+
+Instead it returns a value.
+
+|Return|Meaning|
+|---|---|
+|`3`|Success|
+|`7`|Success|
+|`-1`|Failure|
+
+Why not `0`?
+
+Because:
+
+- `0` is already `stdin`.
+    
+- `1` is `stdout`.
+    
+- `2` is `stderr`.
+    
+
+The first opened file usually becomes `3`.
+
+## 8. `errno`
+
+The return value only answers:
+
+> Did it work?
+
+The reason for failure is stored separately.
+
+Example:
+
+|`errno`|Meaning|
+|---|---|
+|`ENOENT`|File doesn't exist|
+|`EACCES`|Permission denied|
+|`EISDIR`|Is a directory|
+
+This separation between status and reason is a classic Unix design pattern.
+
+## How This Maps to Campus Edge
+
+Future Node Agent behavior:
+
+```
+Master
+   ↓
+Read system information
+   ↓
+Node Agent
+   ↓
+open("/proc/cpuinfo")
+   ↓
+Kernel
+   ↓
+FD returned
+   ↓
+Read bytes
+```
+
+Later we'll use exactly this flow for:
+
+- CPU discovery
+    
+- Memory monitoring
+    
+- Log files
+    
+- Task execution
+    
+
+## Architecture Decision Record (ADR)
+
+### ADR-005
+
+Decision: The Node Agent will follow the Principle of Least Privilege.
+
+Reason:
+
+- Request only the permissions required.
+    
+- Prevent accidental modification of user files.
+    
+- Create a safer execution model for distributed tasks.
+    
+
+## Key Mental Models
+
+## File Descriptor
+
+```
+Program
+   │
+ FD 3
+   │
+Kernel Open File Table
+   │
+Actual File
+```
+
+The FD is a handle, not the file itself.
+
+## File Reading Lifecycle
+
+```
+Shell
+   ↓
+Program starts
+   ↓
+Validate arguments
+   ↓
+open()
+   ↓
+Kernel returns FD
+   ↓
+read()
+   ↓
+write(stdout)
+   ↓
+close()
+```
+
+This is essentially how `cat` works.
+
+## Next Session Preview
+
+Mission: Build the first working version of `edge-cat`.
+
+We'll implement the lifecycle one system call at a time:
+
+1. `open()`
+    
+2. Handle `-1`
+    
+3. Inspect `errno`
+    
+4. `read()`
+    
+5. `write()`
+    
+6. `close()`
+    
+
+By the end of that session, we'll have recreated a tiny Unix utility ourselves and built the first reusable building block for Campus Edge's future Resource Monitor.

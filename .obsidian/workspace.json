@@ -111,12 +111,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Software Development.md",
+                "file": "Networking.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Software Development"
+              "title": "Networking"
             }
           }
         ],
@@ -182,7 +182,8 @@
       }
     ],
     "direction": "horizontal",
-    "width": 299.5
+    "width": 299.5,
+    "collapsed": true
   },
   "right": {
     "id": "b52d05e832939140",
@@ -289,13 +290,13 @@
   },
   "active": "588646b402de397e",
   "lastOpenFiles": [
-    "project defination/Architecture Decision Records (ADRs).md",
-    "Software Development.md",
-    "Campus Edge Platform Decisions.md",
     "System Architecture.md",
-    "Networking.md",
     "System.md",
+    "project defination/Campus Edge Platform Decisions.md",
+    "project defination/Architecture Decision Records (ADRs).md",
     "README.md",
+    "Software Development.md",
+    "Networking.md",
     "knowledge pool.md",
     "labs/networking/NetLab1).md",
     "project defination",
